@@ -1,0 +1,24 @@
+[project]
+name = "roc-cmp"
+version = "0.1.0"
+description = "Score how much a roc-toolkit dump WAV was distorted relative to a reference WAV"
+authors = [
+    { name = "Misha Baranov", email = "baranov.mv@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+roc-cmp = "roc_cmp:main"
+
+[build-system]
+requires = ["uv_build>=0.10.11,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
