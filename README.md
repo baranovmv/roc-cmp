@@ -39,3 +39,9 @@ not only the total length of the holes.
    `--threshold` are glitches.
 4. Short digital-silence runs where the reference is audible are added as dropouts: a few ms of
    silence barely moves a 32 ms spectrum but is a clearly audible click.
+
+## Test data
+
+`data/sonata_no_14_moonlight.mp3`: Beethoven, Piano Sonata No. 14 in C♯ minor "Moonlight",
+Op. 27 No. 2. Downloaded on 10/10/2026 from
+[Musopen](https://musopen.org/music/2547-piano-sonata-no-14-in-c-sharp-minor-moonlight-sonata-op-27-no-2/).
