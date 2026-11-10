@@ -1,40 +1,43 @@
 """Command line interface."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys
+from typing import List, Optional
 
 from .audio import load_wav
 from .compare import Result, compare
 
 
 def _fmt(r: Result, events: bool) -> str:
-    lines = [f"score: {r.score:.1f} / 100"]
+    lines = ["score: {:.1f} / 100".format(r.score)]
     if not r.detected:
-        lines.append(f"verdict: {r.reason}")
+        lines.append("verdict: {}".format(r.reason))
         return "\n".join(lines)
     lines += [
-        f"reference: {r.ref_duration:.1f}s, dump: {r.dump_duration:.1f}s",
-        f"active dump span: {r.active_start:.2f}s .. {r.active_end:.2f}s"
-        f" (reference offset {r.ref_offset:+.3f}s, drift {r.drift_ms:.1f} ms)",
-        f"reference coverage: {100 * r.coverage:.1f}%",
-        f"glitches: {r.glitch_count} ({100 * r.bad_fraction:.2f}% of active time affected),"
-        f" median spectral distance {r.median_lsd:.2f} dB",
+        "reference: {:.1f}s, dump: {:.1f}s".format(r.ref_duration, r.dump_duration),
+        "active dump span: {:.2f}s .. {:.2f}s (reference offset {:+.3f}s, drift {:.1f} ms)".format(
+            r.active_start, r.active_end, r.ref_offset, r.drift_ms
+        ),
+        "reference coverage: {:.1f}%".format(100 * r.coverage),
+        "glitches: {} ({:.2f}% of active time affected), median spectral distance {:.2f} dB".format(
+            r.glitch_count, 100 * r.bad_fraction, r.median_lsd
+        ),
     ]
     if r.jumps:
-        lines.append(f"timeline jumps: {r.jumps}")
+        lines.append("timeline jumps: {}".format(r.jumps))
     if events and r.glitches:
         lines.append("glitch events (dump time -> reference time):")
         for g in r.glitches:
             lines.append(
-                f"  {g.start:8.3f}s .. {g.end:8.3f}s  ref {g.ref_start:8.3f}s  {g.kind:10s} {g.lsd:5.1f} dB"
+                "  {:8.3f}s .. {:8.3f}s  ref {:8.3f}s  {:10s} {:5.1f} dB".format(
+                    g.start, g.end, g.ref_start, g.kind, g.lsd
+                )
             )
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(
         prog="roc-cmp",
         description="Score how much a dumped (received) WAV file was distorted relative to the "
@@ -66,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         ref, dump = load_wav(a.reference), load_wav(a.dump)
     except (OSError, ValueError) as e:
-        print(f"error: {e}", file=sys.stderr)
+        print("error: {}".format(e), file=sys.stderr)
         return 2
 
     r = compare(ref, dump, lsd_threshold=a.threshold, margin_s=a.margin)

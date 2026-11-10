@@ -1,11 +1,10 @@
 """Frame-wise spectral comparison of an aligned dump against the reference and scoring."""
 
-from __future__ import annotations
-
-from dataclasses import dataclass, field
+from collections import OrderedDict, namedtuple
+from typing import List, Tuple
 
 import numpy as np
-from numpy.lib.stride_tricks import sliding_window_view
+from numpy.lib.stride_tricks import as_strided
 
 from .align import align, fill_lags
 from .audio import Audio, match_channels, resample
@@ -21,37 +20,59 @@ MIN_DROPOUT_S = 0.0015  # shortest digital-silence run counted as a dropout
 JUMP_TOL_S = 0.003  # lag change between blocks above this is a timeline jump, not drift
 REF_AUDIBLE = 10 ** (-60 / 20)  # the reference must be louder than this for a gap to count
 
-
-@dataclass
-class Glitch:
-    start: float  # dump time, seconds
-    end: float
-    ref_start: float  # corresponding position in the reference
-    kind: str  # "dropout" or "distortion"
-    lsd: float  # peak log-spectral distance inside, dB
+# start, end: dump time, seconds
+# ref_start: corresponding position in the reference
+# kind: "dropout" or "distortion"
+# lsd: peak log-spectral distance inside, dB
+Glitch = namedtuple("Glitch", "start end ref_start kind lsd")
 
 
-@dataclass
 class Result:
-    score: float
-    detected: bool
-    reason: str = ""
-    ref_duration: float = 0.0
-    dump_duration: float = 0.0
-    active_start: float = 0.0
-    active_end: float = 0.0
-    ref_offset: float = 0.0  # reference time that dump time 0 corresponds to
-    coverage: float = 0.0  # fraction of the reference present and matching in the dump
-    bad_fraction: float = 0.0
-    glitch_count: int = 0
-    glitches: list[Glitch] = field(default_factory=list)
-    median_lsd: float = 0.0
-    drift_ms: float = 0.0
-    jumps: int = 0
+    # ref_offset: reference time that dump time 0 corresponds to
+    # coverage: fraction of the reference present and matching in the dump
+    _FIELDS = (
+        "score", "detected", "reason", "ref_duration", "dump_duration", "active_start",
+        "active_end", "ref_offset", "coverage", "bad_fraction", "glitch_count", "glitches",
+        "median_lsd", "drift_ms", "jumps",
+    )
+
+    def __init__(
+        self,
+        score,
+        detected,
+        reason="",
+        ref_duration=0.0,
+        dump_duration=0.0,
+        active_start=0.0,
+        active_end=0.0,
+        ref_offset=0.0,
+        coverage=0.0,
+        bad_fraction=0.0,
+        glitch_count=0,
+        glitches=None,
+        median_lsd=0.0,
+        drift_ms=0.0,
+        jumps=0,
+    ):
+        self.score = score
+        self.detected = detected
+        self.reason = reason
+        self.ref_duration = ref_duration
+        self.dump_duration = dump_duration
+        self.active_start = active_start
+        self.active_end = active_end
+        self.ref_offset = ref_offset
+        self.coverage = coverage
+        self.bad_fraction = bad_fraction
+        self.glitch_count = glitch_count
+        self.glitches = [] if glitches is None else glitches
+        self.median_lsd = median_lsd
+        self.drift_ms = drift_ms
+        self.jumps = jumps
 
     def to_dict(self) -> dict:
-        d = self.__dict__.copy()
-        d["glitches"] = [g.__dict__ for g in self.glitches]
+        d = OrderedDict((name, getattr(self, name)) for name in self._FIELDS)
+        d["glitches"] = [g._asdict() for g in self.glitches]
         return d
 
 
@@ -72,6 +93,14 @@ _BANDS = _band_matrix()
 _WINDOW = np.hanning(N_FFT).astype(np.float32)
 
 
+def _frames(x: np.ndarray, n: int, hop: int) -> np.ndarray:
+    """(n_frames, n) read-only view of overlapping frames of 1-D `x`, `hop` samples apart."""
+    n_frames = (len(x) - n) // hop + 1
+    return as_strided(
+        x, shape=(n_frames, n), strides=(hop * x.strides[0], x.strides[0]), writeable=False
+    )
+
+
 def _frames_db(frames: np.ndarray) -> np.ndarray:
     """(frames, N_BANDS) band power in dBFS for a (frames, N_FFT) array."""
     spec = np.abs(np.fft.rfft(frames * _WINDOW, axis=1)) ** 2
@@ -85,7 +114,7 @@ def _make_lag_fn(lags: np.ndarray, block: int, jump_tol: int):
     Lags are interpolated between block centres to follow slow clock drift, but a
     change larger than `jump_tol` samples is a timeline discontinuity and stays a step.
     """
-    delta = np.diff(lags, prepend=lags[0])
+    delta = np.concatenate([[0.0], np.diff(lags)])
     steps = np.where(np.abs(delta) > jump_tol, delta, 0.0)
     offset = np.cumsum(steps)
     smooth = lags - offset
@@ -109,7 +138,7 @@ def _ref_frames_db(ref: np.ndarray, starts: np.ndarray, lags: np.ndarray, chunk:
     return out
 
 
-def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
+def _runs(mask: np.ndarray) -> List[Tuple[int, int]]:
     d = np.diff(np.concatenate([[0], mask.astype(np.int8), [0]]))
     return list(zip(np.where(d == 1)[0], np.where(d == -1)[0]))
 
@@ -166,7 +195,7 @@ def compare(
     frame_lags = lag_fn(starts + N_FFT // 2)
     lsd_ch = []
     for c in range(dx.shape[1]):
-        d_db = _frames_db(sliding_window_view(dx[:, c], N_FFT)[::HOP])
+        d_db = _frames_db(_frames(dx[:, c], N_FFT, HOP))
         r_db = _ref_frames_db(rx[:, c], starts, frame_lags)
         lsd_ch.append(np.mean(np.abs(d_db - r_db), axis=1))
     lsd = np.max(lsd_ch, axis=0)
@@ -224,7 +253,7 @@ def compare(
     return res
 
 
-def _zero_runs(x: np.ndarray, min_len: int) -> list[tuple[int, int]]:
+def _zero_runs(x: np.ndarray, min_len: int) -> List[Tuple[int, int]]:
     """Runs of digital silence (all channels) at least `min_len` samples long."""
     z = np.abs(x).max(axis=1) < 1e-5
     return [(s, e) for s, e in _runs(z) if e - s >= max(min_len, 1)]

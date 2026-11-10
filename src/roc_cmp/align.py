@@ -6,9 +6,7 @@ over a minute because of clock/latency compensation in the receiver. So we find
 one global lag from a few probe windows and then track the lag block by block.
 """
 
-from __future__ import annotations
-
-from dataclasses import dataclass
+from collections import namedtuple
 
 import numpy as np
 from scipy.signal import fftconvolve
@@ -18,14 +16,11 @@ SILENT_MS = 1e-9  # mean square below which a block is considered digital silenc
 MIN_SOLID_LOCAL = 0.25
 MIN_SOLID_GLOBAL = 0.75
 
-
-@dataclass
-class Alignment:
-    ok: bool
-    lags: np.ndarray  # per block, in samples of the matching rate; NaN if unknown
-    ncc: np.ndarray  # per block best correlation (0 where not matched)
-    block: int  # block length in samples of the matching rate
-    jumps: int  # number of unexplained large lag changes
+# lags: per block, in samples of the matching rate; NaN if unknown
+# ncc: per block best correlation (0 where not matched)
+# block: block length in samples of the matching rate
+# jumps: number of unexplained large lag changes
+Alignment = namedtuple("Alignment", "ok lags ncc block jumps")
 
 
 def _ncc(ref_pad: np.ndarray, ref_c2: np.ndarray, seg: np.ndarray, start: int, stop: int):
@@ -40,9 +35,12 @@ def _ncc(ref_pad: np.ndarray, ref_c2: np.ndarray, seg: np.ndarray, start: int, s
 
 class _Ref:
     def __init__(self, ref: np.ndarray, pad: int):
+        # float64: float32 FFT noise exceeds the energy of near-empty (zero padded) windows
+        # and yields "correlations" far above 1 that beat the real match.
+        ref = ref.astype(np.float64)
         self.pad = pad
-        self.x = np.concatenate([np.zeros(pad, ref.dtype), ref, np.zeros(pad, ref.dtype)])
-        self.c2 = np.concatenate([[0.0], np.cumsum(self.x.astype(np.float64) ** 2)])
+        self.x = np.concatenate([np.zeros(pad), ref, np.zeros(pad)])
+        self.c2 = np.concatenate([[0.0], np.cumsum(self.x**2)])
 
     def search(self, seg: np.ndarray, lo: int, hi: int):
         """Best (ref position, ncc) for the start of `seg`, searched in [lo, hi] (unpadded ref coordinates)."""
@@ -50,7 +48,7 @@ class _Ref:
         hi = min(hi, len(self.x) - self.pad - len(seg))
         if hi < lo:
             return 0, 0.0
-        scores = _ncc(self.x, self.c2, seg, lo + self.pad, hi + self.pad + 1)
+        scores = _ncc(self.x, self.c2, seg.astype(np.float64), lo + self.pad, hi + self.pad + 1)
         k = int(np.argmax(scores))
         return lo + k, float(scores[k])
 

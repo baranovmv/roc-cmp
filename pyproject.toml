@@ -5,20 +5,25 @@ description = "Score how much a roc-toolkit dump WAV was distorted relative to a
 authors = [
     { name = "Misha Baranov", email = "baranov.mv@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.5"
 dependencies = [
-    "numpy>=2.5.4",
-    "scipy>=1.18.1",
+    "numpy>=1.15",
+    "pyyaml>=3.13",
+    "scipy>=1.1",
 ]
 
 [project.scripts]
 roc-cmp = "roc_cmp:main"
+udp-proxy = "udp_proxy:main"
 
 [build-system]
 requires = ["uv_build>=0.10.11,<0.11.0"]
 build-backend = "uv_build"
 
+[tool.uv.build-backend]
+module-name = ["roc_cmp", "udp_proxy"]
+
 [dependency-groups]
 dev = [
-    "pytest>=9.2.0",
+    "pytest>=3.8",
 ]
