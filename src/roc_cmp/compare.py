@@ -7,7 +7,7 @@ import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
 from .align import align, fill_lags
-from .audio import Audio, match_channels, resample
+from .audio import Audio, load_wav, match_channels, resample
 
 ANALYSIS_RATE = 16000
 MATCH_DECIM = 4  # alignment runs at ANALYSIS_RATE / MATCH_DECIM
@@ -251,6 +251,16 @@ def compare(
     good_dur = float((~bad_d).sum() * hop_s)
     res.coverage = min(good_dur / ref.duration, 1.0) if ref.duration else 0.0
     return res
+
+
+def score(
+    reference,
+    dump,
+    lsd_threshold: float = 2.5,
+    margin_s: float = 0.1,
+) -> Result:
+    """Compare two WAV files given by path. Raises OSError/ValueError if one is unreadable."""
+    return compare(load_wav(reference), load_wav(dump), lsd_threshold, margin_s)
 
 
 def _zero_runs(x: np.ndarray, min_len: int) -> List[Tuple[int, int]]:

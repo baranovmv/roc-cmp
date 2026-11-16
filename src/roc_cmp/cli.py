@@ -3,10 +3,34 @@
 import argparse
 import json
 import sys
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .audio import load_wav
 from .compare import Result, compare
+from .reference import reference_path
+
+
+class _PrintReferencePath(argparse.Action):
+    def __init__(self, option_strings, dest, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, default=argparse.SUPPRESS, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(reference_path())
+        parser.exit()
+
+
+def _expect_range(text: str) -> Tuple[Optional[float], Optional[float]]:
+    """Parse `LO:HI`; either side may be empty (`97:`, `:50`)."""
+    lo, sep, hi = text.partition(":")
+    try:
+        bounds = (float(lo) if lo else None, float(hi) if hi else None)
+    except ValueError:
+        sep = ""
+    if not sep or bounds == (None, None):
+        raise argparse.ArgumentTypeError("{!r} must look like LO:HI, LO: or :HI".format(text))
+    if None not in bounds and bounds[0] > bounds[1]:
+        raise argparse.ArgumentTypeError("{!r}: LO is greater than HI".format(text))
+    return bounds
 
 
 def _fmt(r: Result, events: bool) -> str:
@@ -48,6 +72,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("reference", help="reference WAV file")
     p.add_argument("dump", help="dumped (received) WAV file")
     p.add_argument("--min-score", type=float, metavar="N", help="exit with status 1 if score is below N")
+    p.add_argument("--max-score", type=float, metavar="N", help="exit with status 1 if score is above N")
+    p.add_argument(
+        "--expect",
+        type=_expect_range,
+        metavar="LO:HI",
+        help="exit with status 1 if score is outside LO..HI (either bound may be omitted: 97: or :50)",
+    )
+    p.add_argument(
+        "--reference-path",
+        action=_PrintReferencePath,
+        help="print the path of the bundled reference WAV and exit",
+    )
     p.add_argument("--events", "-e", action="store_true", help="list every detected glitch")
     p.add_argument("--json", action="store_true", help="print machine-readable JSON")
     p.add_argument(
@@ -77,6 +113,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps(r.to_dict(), indent=2))
     else:
         print(_fmt(r, a.events))
-    if a.min_score is not None and r.score < a.min_score:
+    lo, hi = a.expect if a.expect else (None, None)
+    if a.min_score is not None and (lo is None or a.min_score > lo):
+        lo = a.min_score
+    if a.max_score is not None and (hi is None or a.max_score < hi):
+        hi = a.max_score
+    if (lo is not None and r.score < lo) or (hi is not None and r.score > hi):
         return 1
     return 0

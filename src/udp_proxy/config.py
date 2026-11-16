@@ -2,7 +2,7 @@
 
 import ipaddress
 from collections import namedtuple
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import yaml
 
@@ -128,4 +128,30 @@ def load_config(path) -> Config:
             data = yaml.safe_load(f)
     except (OSError, yaml.YAMLError) as e:
         raise ConfigError("cannot read {}: {}".format(path, e)) from None
+    return parse_config(data)
+
+
+def parse_stream_spec(spec: str) -> dict:
+    """Parse `local_port:remote_ip:remote_port[,loss=5][,delay_ms=50][,jitter_ms=10]` into a
+    `streams` entry of the YAML config."""
+    ports, *options = spec.split(",")
+    entry = {"ports": ports}
+    for option in options:
+        key, sep, value = option.partition("=")
+        if not sep or key not in ("loss", "delay_ms", "jitter_ms") or key in entry:
+            raise ConfigError("invalid stream option {!r} in {!r}".format(option, spec))
+        try:
+            entry[key] = float(value)
+        except ValueError:
+            raise ConfigError("{} must be a number, got {!r}".format(key, value)) from None
+    return entry
+
+
+def config_from_streams(specs: List[str], bind: Optional[str] = None, seed: Optional[int] = None) -> Config:
+    """Build a config from `--stream` specs, see parse_stream_spec()."""
+    data = {"streams": [parse_stream_spec(s) for s in specs]}
+    if bind is not None:
+        data["bind"] = bind
+    if seed is not None:
+        data["seed"] = seed
     return parse_config(data)

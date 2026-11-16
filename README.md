@@ -9,6 +9,9 @@ music file was damaged while being streamed, by comparing the reference WAV with
 uv run roc-cmp REF DUMP --events                    # also list every glitch
 uv run roc-cmp REF DUMP --json                      # machine-readable
 uv run roc-cmp REF DUMP --min-score 95              # exit status 1 if score < 95
+uv run roc-cmp REF DUMP --max-score 50              # exit status 1 if score > 50 (loss must be audible)
+uv run roc-cmp REF DUMP --expect 90:99              # exit status 1 if score is outside 90..99 (`97:`, `:50` ok)
+uv run roc-cmp --reference-path                     # print path of the bundled reference WAV
 ```
 
 ## Score
@@ -64,6 +67,17 @@ streams:
 Packets received on `local_port` are sent to `remote_ip:remote_port`; packets coming back from the
 remote (e.g. RTCP feedback) are returned to the last client that wrote to `local_port`. Both
 directions are simulated independently with the stream parameters. Stop with Ctrl-C / SIGTERM.
+
+Without a YAML file, streams can be given on the command line (repeatable; `--bind` and `--seed`
+also override the file):
+
+```sh
+uv run udp-proxy --bind 127.0.0.1 --seed 1 --ready-file /tmp/proxy.ready \
+    --stream 12101:127.0.0.1:12001,loss=5 --stream 12102:127.0.0.1:12002,delay_ms=50,jitter_ms=10
+```
+
+`--ready-file PATH` is created (containing the pid) once all ports are bound, so scripts can wait
+for it instead of sleeping; the proxy also logs `ready`.
 
 ## Python versions
 

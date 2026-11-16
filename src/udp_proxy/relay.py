@@ -110,8 +110,12 @@ class Relay:
             self._loop.call_at(when, send)
 
 
-async def run(config: Config, stop: Optional[asyncio.Event] = None) -> None:
-    """Serve until `stop` is set (or forever)."""
+async def run(
+    config: Config,
+    stop: Optional[asyncio.Event] = None,
+    on_ready: Optional[Callable[[], None]] = None,
+) -> None:
+    """Serve until `stop` is set (or forever). `on_ready` is called once all sockets are bound."""
     rng = random.Random(config.seed)
     shared = {}
     upstreams = []
@@ -136,6 +140,8 @@ async def run(config: Config, stop: Optional[asyncio.Event] = None) -> None:
                 config.bind, s.local_port, s.remote_host, s.remote_port,
                 s.loss, s.delay_ms, s.jitter_ms,
             )
+        if on_ready:
+            on_ready()
         await stop.wait()
     finally:
         for r in relays:
